@@ -14,8 +14,9 @@
         <p v-html="recipe?.summary"></p>
       </div>
       <div class="recipe__steps">
-        <h2>Cooking instruction</h2>
-        <div>
+        <h2>Cooking- instruction</h2>
+        <router-link to="/">home</router-link>
+        <div v-if="numberOfIngredient > 0">
           <div class="recipe__step"
             v-for="step in recipe?.analyzedInstructions[0].steps"
             v-bind:key="step.number"
@@ -39,32 +40,57 @@
 import axios from 'axios';
 import {PhBowlFood, PhTimer, PhUser} from '@phosphor-icons/vue'
 import { computed, ref } from 'vue';
+import {watch} from 'vue'
 import { useRoute } from 'vue-router';
 
 const recipe = ref(null);
 const route = useRoute();
 
 
+const checkedPopularRecipes = ref(false);
+
+(async () => {
+  if ('caches' in window){
+    const cache = await caches.open('popular-recipes')
+    const responses = await cache.matchAll()
+    if(responses.length) {
+      const responsesData = await Promise.all(responses.map(async (response) => 
+        await response.json()
+      ))
+      console.log('ResponseData =>', responsesData)
+      const rec = responsesData[0].results.find((recipe) => recipe.id === Number(route.params.id))
+      if(rec){
+        const cacheRecent = await caches.open('recently-viewed')
+        const res = await cacheRecent.matchAll()
+        if(res.length) {
+          const resData = await Promise.all(res.map(async (response) => 
+            await response.json()
+          ))
+          recipe.value = resData.find((recipe) => recipe.id === Number(route.params.id))
+        }
+      }
+      checkedPopularRecipes.value = true
+    }
+  }
+})(); 
 // set recipe state to the recipe from locastorage if it exist else fetch recipe then store it in the state and localstorage
 // Remove earliest recipe from storage if recipes in storage equal 8
-(async () => {
-  const recentlyViewed = JSON.parse(localStorage.getItem('recently-viewed')) || []
-  let storageRecipe = recentlyViewed.find((recipe) => recipe.id === Number(route.params.id))
-  if(!storageRecipe) {
+
+watch([recipe, checkedPopularRecipes], async ([newRecipe, newCheckPopRecipes]) => {
+  if(newCheckPopRecipes && !newRecipe) {
     const res = await axios.get(`https://api.spoonacular.com/recipes/${route.params.id}/information?apiKey=${process.env.VUE_APP_API_KEY}`)
-    if(res.data) {
-      recipe.value = res.data
-      if(recentlyViewed.length === 8) recentlyViewed.pop()
-      localStorage.setItem('recently-viewed', JSON.stringify([res.data, ...recentlyViewed]))
-    }
-  }else recipe.value = storageRecipe
-})() 
+    if(res.data) recipe.value = res.data
+  }
+})
 
 const numberOfIngredient = computed(() => {
   let num = 0
-  if (recipe.value) recipe.value.analyzedInstructions[0].steps.forEach(step => {
-    num += step.ingredients.length
-  });
+  if (recipe.value && recipe.value.analyzedInstructions && recipe.value.analyzedInstructions.length > 0)
+  {
+    recipe.value.analyzedInstructions[0].steps.forEach(step => {
+      num += step.ingredients.length
+    });
+  }
   return num
 })
 </script>
